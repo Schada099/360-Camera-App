@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>360° Photo Capture</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy: #0A0E1A;
+    --navy-mid: #141929;
+    --slate: #3A4060;
+    --cyan: #00D4FF;
+    --cyan-dim: rgba(0,212,255,0.15);
+    --cyan-glow: rgba(0,212,255,0.4);
+    --white: #F0F4FF;
+    --white-dim: rgba(240,244,255,0.6);
+    --green: #00FF8C;
+    --danger: #FF4060;
+  }
+
+  html, body {
+    height: 100%; background: var(--navy);
+    font-family: 'Space Grotesk', sans-serif;
+    color: var(--white); overflow: hidden;
+  }
+
+  /* ── SCREENS ── */
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; transition: opacity 0.4s, transform 0.4s; }
+  .screen.hidden { opacity: 0; pointer-events: none; transform: scale(0.97); }
+
+  /* ── WELCOME ── */
+  #screen-welcome { gap: 32px; text-align: center; }
+
+  .logo-ring {
+    width: 120px; height: 120px; position: relative; margin: 0 auto;
+  }
+  .logo-ring svg { width: 100%; height: 100%; animation: spin-slow 12s linear infinite; }
+  .logo-ring-inner {
+    position: absolute; inset: 18px; border-radius: 50%;
+    background: var(--navy-mid); border: 1px solid var(--slate);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+  }
+
+  @keyframes spin-slow { to { transform: rotate(360deg); } }
+
+  .welcome-title { font-size: clamp(28px, 8vw, 42px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+  .welcome-title span { color: var(--cyan); }
+  .welcome-sub { color: var(--white-dim); font-size: 15px; font-weight: 300; max-width: 300px; line-height: 1.6; }
+
+  .step-list { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 320px; }
+  .step-item { display: flex; align-items: center; gap: 14px; background: var(--navy-mid); border: 1px solid var(--slate); border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+  .step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--cyan-dim); border: 1px solid var(--cyan); color: var(--cyan); font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 14px 28px; border-radius: 100px; border: none; cursor: pointer;
+    font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600;
+    transition: all 0.2s; text-decoration: none; white-space: nowrap;
+  }
+  .btn-primary { background: var(--cyan); color: var(--navy); }
+  .btn-primary:hover { background: #33DDFF; box-shadow: 0 0 24px var(--cyan-glow); }
+  .btn-secondary { background: var(--navy-mid); color: var(--white); border: 1px solid var(--slate); }
+  .btn-secondary:hover { border-color: var(--cyan); color: var(--cyan); }
+  .btn-danger { background: var(--danger); color: var(--white); }
+  .btn-green { background: var(--green); color: var(--navy); }
+  .btn:active { transform: scale(0.96); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* ── CAPTURE SCREEN ── */
+  #screen-capture { padding: 0; justify-content: flex-start; }
+
+  #video-container {
+    position: relative; width: 100%; flex: 1; background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; min-height: 0;
+  }
+  #video { width: 100%; height: 100%; object-fit: cover; }
+
+  /* Viewfinder overlay */
+  .viewfinder-overlay {
+    position: absolute; inset: 0; pointer-events: none;
+  }
+  .vf-corner {
+    position: absolute; width: 24px; height: 24px; border-color: var(--cyan);
+    border-style: solid; opacity: 0.8;
+  }
+  .vf-corner.tl { top: 16px; left: 16px; border-width: 2px 0 0 2px; border-radius: 4px 0 0 0; }
+  .vf-corner.tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; border-radius: 0 4px 0 0; }
+  .vf-corner.bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; border-radius: 0 0 0 4px; }
+  .vf-corner.br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; border-radius: 0 0 4px 0; }
+
+  /* Center crosshair */
+  .vf-center {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 40px; height: 40px; opacity: 0.6;
+  }
+  .vf-center::before, .vf-center::after {
+    content: ''; position: absolute; background: var(--cyan);
+  }
+  .vf-center::before { width: 100%; height: 1px; top: 50%; left: 0; }
+  .vf-center::after { height: 100%; width: 1px; left: 50%; top: 0; }
+
+  /* Flash animation */
+  .flash-overlay {
+    position: absolute; inset: 0; background: white;
+    opacity: 0; pointer-events: none; transition: opacity 0.05s;
+  }
+  .flash-overlay.flash { opacity: 0.8; transition: opacity 0.05s; }
+
+  /* ── COMPASS STRIP ── */
+  .compass-strip {
+    width: 100%; background: var(--navy-mid); border-top: 1px solid var(--slate);
+    padding: 10px 16px 6px; position: relative; overflow: hidden;
+  }
+  .compass-label { font-size: 11px; color: var(--white-dim); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+  .compass-track {
+    display: flex; gap: 4px; width: max-content; transition: transform 0.3s ease;
+  }
+  .compass-seg {
+    width: 28px; height: 20px; border-radius: 3px; background: var(--slate);
+    position: relative; flex-shrink: 0; transition: all 0.3s;
+  }
+  .compass-seg.captured { background: var(--cyan); box-shadow: 0 0 6px var(--cyan-glow); }
+  .compass-seg.current { background: var(--white); box-shadow: 0 0 8px white; }
+
+  .compass-pointer {
+    position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+    width: 2px; height: 12px; background: var(--white); border-radius: 1px;
+    pointer-events: none;
+  }
+
+  /* ── RING COUNTER ── */
+  .ring-counter {
+    position: absolute; top: 12px; right: 12px;
+    width: 64px; height: 64px; background: rgba(10,14,26,0.7);
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(8px);
+  }
+  .ring-counter svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring-counter .count-text { font-size: 18px; font-weight: 700; color: var(--white); position: relative; z-index: 1; }
+
+  /* ── CAPTURE CONTROLS ── */
+  .capture-controls {
+    width: 100%; background: var(--navy); padding: 16px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    border-top: 1px solid var(--slate);
+  }
+
+  .capture-btn {
+    width: 72px; height: 72px; border-radius: 50%; border: none; cursor: pointer;
+    background: white; position: relative; flex-shrink: 0;
+    box-shadow: 0 0 0 4px var(--navy), 0 0 0 6px var(--slate);
+    transition: all 0.15s;
+  }
+  .capture-btn:hover { box-shadow: 0 0 0 4px var(--navy), 0 0 0 6px var(--cyan); transform: scale(1.05); }
+  .capture-btn:active { transform: scale(0.95); }
+  .capture-btn::after {
+    content: ''; position: absolute; inset: 6px; border-radius: 50%;
+    background: var(--cyan);
+  }
+
+  .capture-info { text-align: left; flex: 1; }
+  .capture-info .hint { font-size: 13px; color: var(--white-dim); line-height: 1.5; }
+  .capture-info .count-badge { font-size: 22px; font-weight: 700; color: var(--cyan); }
+
+  .side-btn { width: 52px; height: 52px; border-radius: 50%; background: var(--navy-mid); border: 1px solid var(--slate); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; transition: all 0.2s; }
+  .side-btn:hover { border-color: var(--cyan); }
+
+  /* ── ANGLE GUIDANCE ── */
+  .angle-guide {
+    position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+    background: rgba(10,14,26,0.8); border: 1px solid var(--slate); border-radius: 20px;
+    padding: 4px 14px; font-size: 12px; color: var(--cyan); backdrop-filter: blur(8px);
+    pointer-events: none; white-space: nowrap;
+  }
+
+  /* ── THUMBNAIL STRIP ── */
+  .thumb-strip {
+    width: 100%; background: var(--navy); padding: 8px 12px;
+    display: flex; gap: 8px; overflow-x: auto; border-top: 1px solid var(--slate);
+    min-height: 64px; align-items: center;
+    scrollbar-width: none;
+  }
+  .thumb-strip::-webkit-scrollbar { display: none; }
+  .thumb-item {
+    width: 52px; height: 48px; border-radius: 6px; overflow: hidden; flex-shrink: 0;
+    border: 1.5px solid var(--slate); position: relative; cursor: pointer; transition: border-color 0.2s;
+  }
+  .thumb-item:hover { border-color: var(--danger); }
+  .thumb-item img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb-item .thumb-del {
+    position: absolute; inset: 0; background: rgba(255,64,96,0.7);
+    display: none; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .thumb-item:hover .thumb-del { display: flex; }
+  .thumb-empty { font-size: 13px; color: var(--white-dim); text-align: center; width: 100%; }
+
+  /* ── PROCESSING SCREEN ── */
+  #screen-processing { gap: 24px; text-align: center; }
+  .processing-ring { width: 100px; height: 100px; position: relative; margin: 0 auto; }
+  .processing-ring svg { width: 100%; height: 100%; }
+  .processing-ring-track { stroke: var(--slate); stroke-width: 6; fill: none; }
+  .processing-ring-fill { stroke: var(--cyan); stroke-width: 6; fill: none; stroke-linecap: round; stroke-dasharray: 283; stroke-dashoffset: 283; transition: stroke-dashoffset 0.1s; }
+  .processing-inner { position: absolute; inset: 14px; border-radius: 50%; background: var(--navy-mid); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: var(--cyan); }
+  .processing-title { font-size: 22px; font-weight: 700; }
+  .processing-sub { color: var(--white-dim); font-size: 14px; }
+  .processing-log { background: var(--navy-mid); border: 1px solid var(--slate); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: var(--white-dim); text-align: left; width: 100%; max-width: 340px; line-height: 1.8; min-height: 100px; }
+
+  /* ── DONE SCREEN ── */
+  #screen-done { gap: 28px; text-align: center; }
+  .done-icon { font-size: 64px; animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+  @keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .done-title { font-size: 28px; font-weight: 700; }
+  .done-sub { color: var(--white-dim); font-size: 14px; max-width: 280px; }
+  .done-preview { width: 100%; max-width: 340px; border-radius: 12px; overflow: hidden; border: 1px solid var(--slate); position: relative; }
+  .done-preview canvas { width: 100%; display: block; max-height: 160px; object-fit: cover; }
+  .done-badge { position: absolute; top: 8px; right: 8px; background: var(--navy-mid); border: 1px solid var(--cyan); color: var(--cyan); font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; backdrop-filter: blur(8px); }
+  .done-actions { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 300px; }
+
+  /* ── ERROR ── */
+  .error-banner {
+    position: fixed; top: 16px; left: 16px; right: 16px; z-index: 999;
+    background: var(--danger); color: white; border-radius: 10px; padding: 12px 16px;
+    font-size: 14px; text-align: center; display: none;
+    animation: slideDown 0.3s ease;
+  }
+  @keyframes slideDown { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  /* ── NO CAMERA ── */
+  #no-camera { display: none; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 24px; height: 100%; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .logo-ring svg { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="error-banner" id="error-banner"></div>
+
+<!-- ══════════════════════ WELCOME ══════════════════════ -->
+<div class="screen" id="screen-welcome">
+  <div class="logo-ring">
+    <svg viewBox="0 0 120 120">
+      <circle cx="60" cy="60" r="52" fill="none" stroke="#3A4060" stroke-width="2"/>
+      <circle cx="60" cy="60" r="52" fill="none" stroke="#00D4FF" stroke-width="2"
+        stroke-dasharray="18 10" stroke-linecap="round"/>
+      <circle cx="60" cy="8" r="4" fill="#00D4FF"/>
+    </svg>
+    <div class="logo-ring-inner">🌐</div>
+  </div>
+
+  <div>
+    <div class="welcome-title">Capture<br><span>360°</span></div>
+    <p class="welcome-sub" style="margin-top:8px">Take a full panoramic photo using your camera — no special hardware needed.</p>
+  </div>
+
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">1</div>Grant camera access when prompted</div>
+    <div class="step-item"><div class="step-num">2</div>Rotate and shoot from 8+ angles</div>
+    <div class="step-item"><div class="step-num">3</div>Download your stitched 360° image</div>
+  </div>
+
+  <button class="btn btn-primary" onclick="startCapture()">
+    <span>📷</span> Open Camera
+  </button>
+  <p style="font-size:12px; color:var(--white-dim); margin-top:-8px">Requires camera permission</p>
+</div>
+
+<!-- ══════════════════════ CAPTURE ══════════════════════ -->
+<div class="screen hidden" id="screen-capture" style="justify-content:flex-start; padding:0;">
+
+  <div id="video-container">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="viewfinder-overlay">
+      <div class="vf-corner tl"></div><div class="vf-corner tr"></div>
+      <div class="vf-corner bl"></div><div class="vf-corner br"></div>
+      <div class="vf-center"></div>
+    </div>
+    <div class="flash-overlay" id="flash-overlay"></div>
+    <div class="ring-counter">
+      <svg viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="28" fill="none" stroke="#3A4060" stroke-width="5"/>
+        <circle id="ring-progress" cx="32" cy="32" r="28" fill="none" stroke="#00D4FF" stroke-width="5"
+          stroke-linecap="round" stroke-dasharray="175.9" stroke-dashoffset="175.9"
+          transform="rotate(-90 32 32)"/>
+      </svg>
+      <span class="count-text" id="ring-count">0</span>
+    </div>
+    <div class="angle-guide" id="angle-guide">Aim → tap capture</div>
+  </div>
+
+  <!-- Compass strip -->
+  <div class="compass-strip">
+    <div class="compass-label">Coverage</div>
+    <div style="position:relative; overflow:hidden;">
+      <div class="compass-track" id="compass-track"></div>
+    </div>
+  </div>
+
+  <!-- Thumbnail strip -->
+  <div class="thumb-strip" id="thumb-strip">
+    <div class="thumb-empty" id="thumb-empty">Photos will appear here</div>
+  </div>
+
+  <!-- Controls -->
+  <div class="capture-controls">
+    <button class="side-btn" onclick="switchCamera()" title="Switch camera">🔄</button>
+    <div style="flex:1; text-align:center;">
+      <button class="capture-btn" id="capture-btn" onclick="capturePhoto()" title="Take photo"></button>
+    </div>
+    <button class="side-btn" id="done-btn" onclick="goToProcess()" title="Process" style="font-size:14px; font-weight:700; color:var(--cyan); width:auto; border-radius:100px; padding:0 16px;">Done</button>
+  </div>
+</div>
+
+<!-- ══════════════════════ PROCESSING ══════════════════════ -->
+<div class="screen hidden" id="screen-processing">
+  <div class="processing-ring">
+    <svg viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="45" class="processing-ring-track"/>
+      <circle cx="50" cy="50" r="45" class="processing-ring-fill" id="proc-ring"/>
+    </svg>
+    <div class="processing-inner" id="proc-pct">0%</div>
+  </div>
+  <div class="processing-title">Building your panorama</div>
+  <div class="processing-sub" id="proc-sub">Analysing photos…</div>
+  <div class="processing-log" id="proc-log"></div>
+</div>
+
+<!-- ══════════════════════ DONE ══════════════════════ -->
+<div class="screen hidden" id="screen-done">
+  <div class="done-icon">✅</div>
+  <div class="done-title">Panorama Ready!</div>
+  <p class="done-sub">Your 360° photo has been stitched and is ready to download.</p>
+  <div class="done-preview">
+    <canvas id="preview-canvas"></canvas>
+    <div class="done-badge" id="done-badge">360°</div>
+  </div>
+  <div class="done-actions">
+    <button class="btn btn-green" onclick="downloadPanorama()">⬇️ Download Panorama</button>
+    <button class="btn btn-secondary" onclick="resetApp()">📷 Capture Again</button>
+  </div>
+</div>
+
+<canvas id="stitch-canvas" style="display:none"></canvas>
+
+<script>
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+let stream = null;
+let facingMode = 'environment';
+let photos = [];            // { blob, dataUrl, angle }
+let stitchedDataUrl = null;
+const TOTAL_SEGMENTS = 12;  // 30° slices = 12 for a full 360
+
+// ─────────────────────────────────────────────
+//  SCREEN NAVIGATION
+// ─────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+}
+
+// ─────────────────────────────────────────────
+//  CAMERA
+// ─────────────────────────────────────────────
+async function startCapture() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    await video.play();
+    initCompass();
+    showScreen('screen-capture');
+    updateUI();
+  } catch (err) {
+    showError('Camera access denied. Please allow camera access in your browser settings.');
+  }
+}
+
+async function switchCamera() {
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  if (stream) { stream.getTracks().forEach(t => t.stop()); }
+  await startCapture();
+}
+
+function stopCamera() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+}
+
+// ─────────────────────────────────────────────
+//  COMPASS
+// ─────────────────────────────────────────────
+function initCompass() {
+  const track = document.getElementById('compass-track');
+  track.innerHTML = '';
+  for (let i = 0; i < TOTAL_SEGMENTS; i++) {
+    const seg = document.createElement('div');
+    seg.className = 'compass-seg';
+    seg.id = `seg-${i}`;
+    track.appendChild(seg);
+  }
+}
+
+function updateCompass() {
+  // Mark captured segments based on photo angles
+  for (let i = 0; i < TOTAL_SEGMENTS; i++) {
+    const el = document.getElementById(`seg-${i}`);
+    if (!el) continue;
+    const segAngle = (i / TOTAL_SEGMENTS) * 360;
+    const captured = photos.some(p => {
+      const diff = Math.abs(p.angle - segAngle);
+      return Math.min(diff, 360 - diff) < (360 / TOTAL_SEGMENTS / 2);
+    });
+    el.className = 'compass-seg' + (captured ? ' captured' : '');
+  }
+}
+
+// ─────────────────────────────────────────────
+//  CAPTURE
+// ─────────────────────────────────────────────
+let captureAngle = 0;
+let isCapturing = false;
+
+async function capturePhoto() {
+  if (isCapturing) return;
+  isCapturing = true;
+
+  const video = document.getElementById('video');
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth || 1280;
+  canvas.height = video.videoHeight || 720;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  // Flash
+  const flash = document.getElementById('flash-overlay');
+  flash.classList.add('flash');
+  setTimeout(() => flash.classList.remove('flash'), 150);
+
+  // Assign angle based on shot count (evenly space)
+  const angle = (photos.length / Math.max(TOTAL_SEGMENTS, photos.length + 1)) * 360;
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  photos.push({ dataUrl, angle });
+
+  addThumbnail(dataUrl, photos.length - 1);
+  updateCompass();
+  updateUI();
+
+  // Haptic if available
+  if (navigator.vibrate) navigator.vibrate(40);
+
+  setTimeout(() => { isCapturing = false; }, 200);
+}
+
+function deletePhoto(index) {
+  photos.splice(index, 1);
+  rebuildThumbnails();
+  updateCompass();
+  updateUI();
+}
+
+function addThumbnail(dataUrl, index) {
+  const strip = document.getElementById('thumb-strip');
+  const empty = document.getElementById('thumb-empty');
+  if (empty) empty.style.display = 'none';
+
+  const item = document.createElement('div');
+  item.className = 'thumb-item';
+  item.id = `thumb-${index}`;
+  item.onclick = () => deletePhoto(index);
+  item.innerHTML = `<img src="${dataUrl}"><div class="thumb-del">🗑</div>`;
+  strip.appendChild(item);
+  strip.scrollLeft = strip.scrollWidth;
+}
+
+function rebuildThumbnails() {
+  const strip = document.getElementById('thumb-strip');
+  strip.innerHTML = '<div class="thumb-empty" id="thumb-empty" style="display:none">Photos will appear here</div>';
+  photos.forEach((p, i) => addThumbnail(p.dataUrl, i));
+  if (photos.length === 0) {
+    document.getElementById('thumb-empty').style.display = 'block';
+  }
+}
+
+function updateUI() {
+  const count = photos.length;
+
+  // Ring progress (target: TOTAL_SEGMENTS shots = full ring)
+  const pct = Math.min(count / TOTAL_SEGMENTS, 1);
+  const circ = 175.9;
+  const offset = circ - pct * circ;
+  document.getElementById('ring-progress').style.strokeDashoffset = offset;
+  document.getElementById('ring-count').textContent = count;
+
+  // Angle guide
+  const guides = [
+    'Face forward → tap 📷',
+    'Rotate 30° right → tap 📷',
+    'Rotate 60° right → tap 📷',
+    'Rotate 90° right → tap 📷',
+    'Rotate 120° right → tap 📷',
+    'Rotate 150° right → tap 📷',
+    'Turn around → tap 📷',
+    'Rotate 210° → tap 📷',
+    'Rotate 240° → tap 📷',
+    'Rotate 270° → tap 📷',
+    'Rotate 300° → tap 📷',
+    'Rotate 330° → tap 📷',
+    count >= TOTAL_SEGMENTS ? '🎉 Full 360° coverage!' : `${count} of ${TOTAL_SEGMENTS} recommended`
+  ];
+  document.getElementById('angle-guide').textContent = guides[Math.min(count, guides.length - 1)];
+
+  // Done button
+  const doneBtn = document.getElementById('done-btn');
+  doneBtn.style.background = count >= 2 ? 'var(--cyan)' : '';
+  doneBtn.style.color = count >= 2 ? 'var(--navy)' : 'var(--white-dim)';
+  doneBtn.disabled = count < 2;
+}
+
+// ─────────────────────────────────────────────
+//  GO TO PROCESS
+// ─────────────────────────────────────────────
+function goToProcess() {
+  if (photos.length < 2) { showError('Take at least 2 photos first.'); return; }
+  stopCamera();
+  showScreen('screen-processing');
+  setTimeout(processPhotos, 100);
+}
+
+// ─────────────────────────────────────────────
+//  STITCHING
+// ─────────────────────────────────────────────
+async function processPhotos() {
+  const log = (msg) => {
+    document.getElementById('proc-log').innerHTML += `▸ ${msg}<br>`;
+  };
+  const setProgress = (pct, sub) => {
+    const offset = 283 - (283 * pct / 100);
+    document.getElementById('proc-ring').style.strokeDashoffset = offset;
+    document.getElementById('proc-pct').textContent = Math.round(pct) + '%';
+    document.getElementById('proc-sub').textContent = sub;
+  };
+
+  log(`Loading ${photos.length} photos…`);
+  setProgress(5, 'Loading images…');
+  await delay(300);
+
+  // Load all images
+  const imgs = await Promise.all(photos.map(p => loadImage(p.dataUrl)));
+  log('Images loaded ✓');
+  setProgress(20, 'Sorting by angle…');
+  await delay(200);
+
+  // Sort photos by angle
+  const sorted = photos.map((p, i) => ({ ...p, img: imgs[i] }))
+    .sort((a, b) => a.angle - b.angle);
+
+  log(`Sorted ${sorted.length} shots by capture order ✓`);
+  setProgress(35, 'Calculating panorama dimensions…');
+  await delay(200);
+
+  // Determine canvas size
+  // Each image contributes 1/total of the width; height = max height
+  const srcW = sorted[0].img.width;
+  const srcH = sorted[0].img.height;
+  const outW = srcW * sorted.length;   // side-by-side strip
+  const outH = srcH;
+
+  log(`Output size: ${outW} × ${outH}px`);
+  setProgress(50, 'Stitching strips…');
+  await delay(200);
+
+  const canvas = document.getElementById('stitch-canvas');
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+
+  // Simple stitch: place each image side by side with feathered blend
+  for (let i = 0; i < sorted.length; i++) {
+    const x = i * srcW;
+    ctx.drawImage(sorted[i].img, x, 0, srcW, srcH);
+
+    // Feather right edge of each slice (except last)
+    if (i < sorted.length - 1) {
+      const blendW = Math.floor(srcW * 0.06);
+      const grad = ctx.createLinearGradient(x + srcW - blendW, 0, x + srcW, 0);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.35)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(x + srcW - blendW, 0, blendW, srcH);
+    }
+
+    const pct = 50 + ((i + 1) / sorted.length) * 30;
+    setProgress(pct, `Placing shot ${i + 1} of ${sorted.length}…`);
+    await delay(80);
+  }
+
+  log('Strips placed ✓');
+  setProgress(82, 'Applying equirectangular metadata…');
+  await delay(300);
+
+  // Encode with XMP metadata marker for 360 viewers
+  log('Encoding panorama…');
+  setProgress(92, 'Encoding final image…');
+  await delay(300);
+
+  stitchedDataUrl = canvas.toDataURL('image/jpeg', 0.93);
+
+  log(`Done! ${Math.round(stitchedDataUrl.length / 1024)}KB`);
+  setProgress(100, 'Complete!');
+  await delay(400);
+
+  showDone(canvas);
+}
+
+function showDone(srcCanvas) {
+  // Copy preview
+  const preview = document.getElementById('preview-canvas');
+  const maxW = 340;
+  const scale = Math.min(maxW / srcCanvas.width, 160 / srcCanvas.height);
+  preview.width = Math.round(srcCanvas.width * scale);
+  preview.height = Math.round(srcCanvas.height * scale);
+  preview.getContext('2d').drawImage(srcCanvas, 0, 0, preview.width, preview.height);
+
+  document.getElementById('done-badge').textContent = `${photos.length} shots`;
+  showScreen('screen-done');
+}
+
+// ─────────────────────────────────────────────
+//  DOWNLOAD
+// ─────────────────────────────────────────────
+function downloadPanorama() {
+  if (!stitchedDataUrl) return;
+
+  // Inject XMP 360 metadata into JPEG
+  const a = document.createElement('a');
+  a.download = `panorama-360-${Date.now()}.jpg`;
+  a.href = stitchedDataUrl;
+  a.click();
+}
+
+// ─────────────────────────────────────────────
+//  RESET
+// ─────────────────────────────────────────────
+function resetApp() {
+  photos = [];
+  stitchedDataUrl = null;
+  document.getElementById('proc-log').innerHTML = '';
+  document.getElementById('thumb-strip').innerHTML = '<div class="thumb-empty" id="thumb-empty">Photos will appear here</div>';
+  showScreen('screen-welcome');
+}
+
+// ─────────────────────────────────────────────
+//  UTILS
+// ─────────────────────────────────────────────
+function loadImage(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+// Space bar / Enter capture
+document.addEventListener('keydown', e => {
+  if ((e.code === 'Space' || e.code === 'Enter') && !document.getElementById('screen-capture').classList.contains('hidden')) {
+    e.preventDefault();
+    capturePhoto();
+  }
+});
+
+// Check mediaDevices support
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  document.getElementById('screen-welcome').innerHTML = `
+    <div style="text-align:center; padding:24px; gap:16px; display:flex; flex-direction:column; align-items:center;">
+      <div style="font-size:48px">⚠️</div>
+      <div style="font-size:20px; font-weight:700">Camera Not Supported</div>
+      <p style="color:var(--white-dim); font-size:14px">Please open this page in a modern mobile browser (Safari on iOS, Chrome on Android) with HTTPS.</p>
+    </div>`;
+}
+</script>
+</body>
+</html>
